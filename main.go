@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"filippo.io/age"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -64,18 +66,40 @@ var rmCmd = &cobra.Command{
 	},
 }
 
-var upCmd = &cobra.Command{
-	Use:   "up [key] [value]",
-	Short: "Update a key-value pair",
-	Args:  cobra.ExactArgs(2),
+var generateKeyCmd = &cobra.Command{
+	Use:   "generate-key",
+	Short: "Generate a new age key pair",
 	Run: func(cmd *cobra.Command, args []string) {
-		kv := loadData()
-		if _, ok := kv.Data[args[0]]; ok {
-			kv.Data[args[0]] = args[1]
-			saveData(kv)
-		} else {
-			fmt.Printf("Key '%s' not found\n", args[0])
+		identity, err := age.GenerateX25519Identity()
+		if err != nil {
+			fmt.Printf("Error generating key pair: %v\n", err)
+			return
 		}
+
+		// Create keys directory if it doesn't exist
+		keysDir := "keys"
+		if err := os.MkdirAll(keysDir, 0700); err != nil {
+			fmt.Printf("Error creating keys directory: %v\n", err)
+			return
+		}
+
+		// Save private key
+		privKeyPath := filepath.Join(keysDir, "key.txt")
+		if err := os.WriteFile(privKeyPath, []byte(identity.String()), 0600); err != nil {
+			fmt.Printf("Error saving private key: %v\n", err)
+			return
+		}
+
+		// Save public key
+		pubKeyPath := filepath.Join(keysDir, "key.pub")
+		if err := os.WriteFile(pubKeyPath, []byte(identity.Recipient().String()), 0644); err != nil {
+			fmt.Printf("Error saving public key: %v\n", err)
+			return
+		}
+
+		fmt.Printf("Generated key pair:\n")
+		fmt.Printf("Private key saved to: %s\n", privKeyPath)
+		fmt.Printf("Public key saved to: %s\n", pubKeyPath)
 	},
 }
 
@@ -84,7 +108,7 @@ func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(rmCmd)
-	rootCmd.AddCommand(upCmd)
+	rootCmd.AddCommand(generateKeyCmd)
 }
 
 func loadData() *KeyValue {
