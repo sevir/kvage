@@ -16,6 +16,9 @@ zip_binary() {
 # Create output directory
 mkdir -p build
 
+# clean up
+rm -rf build/*
+
 # Build for Windows (amd64)
 GOOS=windows GOARCH=amd64 go build -o "build/${BINARY_NAME}-windows-amd64.exe" $MAIN_PATH
 

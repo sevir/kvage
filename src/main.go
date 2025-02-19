@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/spf13/cobra"
 )
@@ -84,8 +85,16 @@ var listCmd = &cobra.Command{
 		}
 
 		kv := loadData()
-		for k, v := range kv.Data {
-			decrypted, err := decryptValue(v, identity)
+		// Create a sorted slice of keys
+		keys := make([]string, 0, len(kv.Data))
+		for k := range kv.Data {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		// Iterate over sorted keys
+		for _, k := range keys {
+			decrypted, err := decryptValue(kv.Data[k], identity)
 			if err != nil {
 				fmt.Printf("%s: <error decrypting: %v>\n", k, err)
 				continue
