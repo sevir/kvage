@@ -5,6 +5,13 @@
 
  ## Usage
 
+Optional flags
+
+```
+-f --file <file> : specify the file to save the key-value pairs
+-k --key <key> : specify the file key to use for encryption
+```
+
  List all key-value pairs
 
  ```bash

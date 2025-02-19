@@ -1,3 +1,4 @@
 kvage
 keys/*
 *.yaml
+build/*
