@@ -1,36 +1,42 @@
 # KVage
 
- terminal cli for saving and retrieving key-value pairs in a file
+ terminal cli for saving and retrieving key-value pairs in a yaml file encrypting the values using [AGE encryption](https://github.com/FiloSottile/age) 
+
 
  ## Usage
 
  List all key-value pairs
 
  ```bash
- kv list
+ kvage list
  ```
 
 Save a key-value pair
 
 ```bash
-kv set <key> <value>
+kvage set <key> <value>
 ```
 
 Update a key-value pair
 
 ```bash
-kv up <key> <value>
+kvage up <key> <value>
 ```
 
 Get a value by key
 
 ```bash
-kv get <key>
+kvage get <key>
 ```
 
 Delete a key-value pair
 
 ```bash
-kv rm <key>
+kvage rm <key>
 ```
 
+Generate an AGE key pair
+
+```bash
+kvage generate-key
+```
