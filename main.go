@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"filippo.io/age"
 	"github.com/spf13/cobra"
@@ -83,23 +84,22 @@ var generateKeyCmd = &cobra.Command{
 			return
 		}
 
+		// Format private key content with creation time and public key info
+		creationTime := time.Now().Format(time.RFC3339)
+		publicKey := identity.Recipient().String()
+		privateKeyContent := fmt.Sprintf("# Created: %s\n# Public key: %s\n%s",
+			creationTime,
+			publicKey,
+			identity.String())
+
 		// Save private key
 		privKeyPath := filepath.Join(keysDir, "key.txt")
-		if err := os.WriteFile(privKeyPath, []byte(identity.String()), 0600); err != nil {
+		if err := os.WriteFile(privKeyPath, []byte(privateKeyContent), 0600); err != nil {
 			fmt.Printf("Error saving private key: %v\n", err)
 			return
 		}
 
-		// Save public key
-		pubKeyPath := filepath.Join(keysDir, "key.pub")
-		if err := os.WriteFile(pubKeyPath, []byte(identity.Recipient().String()), 0644); err != nil {
-			fmt.Printf("Error saving public key: %v\n", err)
-			return
-		}
-
-		fmt.Printf("Generated key pair:\n")
-		fmt.Printf("Private key saved to: %s\n", privKeyPath)
-		fmt.Printf("Public key saved to: %s\n", pubKeyPath)
+		fmt.Printf("Key pairs saved to: %s\n", privKeyPath)
 	},
 }
 
