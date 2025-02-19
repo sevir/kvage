@@ -47,3 +47,21 @@ Generate an AGE key pair
 ```bash
 kvage generate-key
 ```
+
+## Tasks
+
+### build
+
+Build the release for all platforms
+
+```bash
+bash scripts/build.sh
+```
+
+### install:dependencies
+
+Install the dependencies declared in the go.mod file
+
+```bash
+go mod tidy
+```
