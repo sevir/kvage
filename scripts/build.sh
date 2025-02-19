@@ -4,6 +4,15 @@
 BINARY_NAME="kvage"
 MAIN_PATH="./src"
 
+# Helper function to zip a binary
+zip_binary() {
+    local binary=$1
+    cd build
+    zip -j "${binary}.zip" "${binary}"
+    rm "${binary}"  # Remove the original binary
+    cd ..
+}
+
 # Create output directory
 mkdir -p build
 
@@ -23,4 +32,12 @@ GOOS=darwin GOARCH=arm64 go build -o "build/${BINARY_NAME}-darwin-arm64" $MAIN_P
 chmod +x build/${BINARY_NAME}-linux-*
 chmod +x build/${BINARY_NAME}-darwin-*
 
-echo "Build complete! Binaries are in the build directory."
+# Zip each binary
+for binary in build/${BINARY_NAME}-*; do
+    if [ -f "$binary" ]; then
+        zip_binary $(basename "$binary")
+    fi
+done
+
+echo "Build complete! Zipped binaries are in the build directory."
+
