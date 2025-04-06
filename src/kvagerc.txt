@@ -1,0 +1,20 @@
+LAST_DIR=""
+OLD_PROMPT_COMMAND=$PROMPT_COMMAND
+
+check_and_source_local_kvagerc() {
+    local dir_actual="$(pwd)"
+
+    if [[ "$dir_actual" != "$LAST_DIR" ]]; then
+        LAST_DIR="$dir_actual"
+        if [[ -f "$dir_actual/.kvagerc" ]]; then
+            eval "$(kvage decrypt < ./.kvagerc)"
+        fi
+    fi
+
+    #execute now $OLD_PROMPT_COMMAND
+    if [[ -n "$OLD_PROMPT_COMMAND" ]]; then
+        eval "$OLD_PROMPT_COMMAND"
+    fi
+}
+
+PROMPT_COMMAND=check_and_source_local_kvagerc
