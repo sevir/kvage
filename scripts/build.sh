@@ -3,7 +3,7 @@
 # Set the binary name
 BINARY_NAME="kvage"
 MAIN_PATH="./src"
-VERSION="v1.8.0"
+VERSION="v1.11.0"
 
 # Helper function to zip a binary
 zip_binary() {
