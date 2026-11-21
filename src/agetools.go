@@ -13,17 +13,6 @@ import (
 	"filippo.io/age"
 )
 
-// keyPath resolves the private key file: --key wins over AGE_KEY_FILE.
-func (a *app) keyPath() (string, error) {
-	if a.keyFile != "" {
-		return a.keyFile, nil
-	}
-	if p := os.Getenv("AGE_KEY_FILE"); p != "" {
-		return p, nil
-	}
-	return "", errors.New("no key file specified: use the --key flag or set the AGE_KEY_FILE environment variable")
-}
-
 // loadIdentity reads an age identity file (comments and blank lines allowed)
 // and returns its first X25519 identity.
 func loadIdentity(path string) (*age.X25519Identity, error) {
@@ -45,13 +34,29 @@ func loadIdentity(path string) (*age.X25519Identity, error) {
 	return nil, fmt.Errorf("key file %s has no X25519 identity", path)
 }
 
-// identity returns the private key selected by flags and environment.
+// identity returns the private key selected by flags, the local .kvage
+// directory, the environment or the config directory.
 func (a *app) identity() (*age.X25519Identity, error) {
-	path, err := a.keyPath()
+	path, _, err := a.resolveKey()
 	if err != nil {
 		return nil, err
 	}
 	return loadIdentity(path)
+}
+
+// ownRecipient returns the public key of the own identity.
+func (a *app) ownRecipient() (*age.X25519Recipient, error) {
+	identity, err := a.identity()
+	if err != nil {
+		return nil, err
+	}
+	return identity.Recipient(), nil
+}
+
+// ownRecipientQuiet is ownRecipient for callers that can work without it:
+// it never asks the user for anything.
+func (a *app) ownRecipientQuiet() (*age.X25519Recipient, error) {
+	return a.ownRecipient()
 }
 
 func encryptValue(value string, recipients ...age.Recipient) (string, error) {

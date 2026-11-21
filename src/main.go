@@ -59,6 +59,8 @@ func newRootCmd(in io.Reader, out, errw io.Writer) *cobra.Command {
 		a.encryptCmd(),
 		a.decryptCmd(),
 		a.shellrcCmd(),
+		a.rcCmd(),
+		a.rekeyCmd(),
 	)
 	return root
 }
@@ -93,13 +95,21 @@ func (a *app) setCmd() *cobra.Command {
 		Short:   "Save an encrypted key-value pair",
 		Long: `Save an encrypted key-value pair, replacing any previous value.
 
+When a public-keys.txt file exists next to the store, the value is
+encrypted for every recipient listed in it and the private key is not
+needed. Otherwise it is encrypted for the own key only.
+
 Without a value argument the value is asked for without echo, or read from
 standard input when it is not a terminal. Passing the value as an argument
 still works, but it stays in the shell history.`,
 		Args:              cobra.RangeArgs(1, 2),
 		ValidArgsFunction: a.completeKeys,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			identity, err := a.identity()
+			storePath, storeSource := a.resolveStore()
+			if _, keySource, err := a.resolveKey(); err == nil && keySource == sourceLocal && storeSource != sourceLocal {
+				a.warnf("using the key in ./%s but the store %s: values saved now can only be read with that key", localDirName, storePath)
+			}
+			recipients, err := a.storeRecipients()
 			if err != nil {
 				return err
 			}
@@ -115,12 +125,11 @@ still works, but it stays in the shell history.`,
 				}
 			}
 
-			storePath := a.storePath()
 			kv, err := loadStore(storePath)
 			if err != nil {
 				return err
 			}
-			encrypted, err := encryptValue(value, identity.Recipient())
+			encrypted, err := encryptValue(value, recipients...)
 			if err != nil {
 				return fmt.Errorf("encrypting value: %w", err)
 			}
@@ -364,10 +373,10 @@ a warning.`,
 func (a *app) encryptCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "encrypt",
-		Short: "Encrypt text from stdin using the public key",
+		Short: "Encrypt text from stdin for the own key or the recipients list",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			identity, err := a.identity()
+			recipients, err := a.streamRecipients()
 			if err != nil {
 				return err
 			}
@@ -375,7 +384,7 @@ func (a *app) encryptCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
-			encrypted, err := encryptValue(string(input), identity.Recipient())
+			encrypted, err := encryptValue(string(input), recipients...)
 			if err != nil {
 				return fmt.Errorf("encrypting input: %w", err)
 			}

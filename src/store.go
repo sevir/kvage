@@ -29,18 +29,6 @@ func (kv *KeyValue) sortedKeys(match func(string) bool) []string {
 	return keys
 }
 
-// storePath resolves the store file: --file, then ./kvage.yaml, then the
-// config directory.
-func (a *app) storePath() string {
-	if a.storeFile != "" {
-		return a.storeFile
-	}
-	if _, err := os.Stat("kvage.yaml"); err == nil {
-		return "kvage.yaml"
-	}
-	return filepath.Join(getConfigPath(), "kvage.yaml")
-}
-
 // loadStore reads the store. A missing file is an empty store; any other
 // read or parse failure is an error, so a damaged file is never silently
 // replaced by an empty one.

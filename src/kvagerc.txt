@@ -7,7 +7,9 @@ check_and_source_local_kvagerc() {
     if [[ "$dir_actual" != "$LAST_DIR" ]]; then
         LAST_DIR="$dir_actual"
         if [[ -f "$dir_actual/.kvagerc" ]]; then
-            eval "$(kvage decrypt < ./.kvagerc)"
+            # "kvage rc" prints only sanitized "export NAME='value'" lines:
+            # the decrypted file itself is never evaluated.
+            eval "$(command kvage rc "$dir_actual/.kvagerc")"
         fi
     fi
 

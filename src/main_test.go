@@ -30,6 +30,9 @@ func writeKey(t *testing.T, path string) *age.X25519Identity {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	content := fmt.Sprintf("# created: 2025-01-01T00:00:00Z\n# public key: %s\n%s", id.Recipient(), id)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
