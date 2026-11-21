@@ -23,6 +23,9 @@ type app struct {
 	in        io.Reader
 	out       io.Writer
 	errw      io.Writer
+
+	cfg *userConfig // loaded on first use
+	kr  keyring     // resolved on first use
 }
 
 // errReported marks a failure whose details were already written to stderr.
@@ -61,6 +64,11 @@ func newRootCmd(in io.Reader, out, errw io.Writer) *cobra.Command {
 		a.shellrcCmd(),
 		a.rcCmd(),
 		a.rekeyCmd(),
+		a.vaultCmd(),
+		a.unlockCmd(),
+		a.lockCmd(),
+		a.statusCmd(),
+		a.agentCmd(),
 	)
 	return root
 }
@@ -154,11 +162,7 @@ func (a *app) getCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("key '%s' not found", args[0])
 			}
-			identity, err := a.identity()
-			if err != nil {
-				return err
-			}
-			decrypted, err := decryptValue(val, identity)
+			decrypted, err := a.decryptOne(val, false)
 			if err != nil {
 				return fmt.Errorf("decrypting value: %w", err)
 			}
@@ -175,19 +179,26 @@ func (a *app) decryptEach(kv *KeyValue, keys []string, fn func(key, value string
 	if len(keys) == 0 {
 		return nil
 	}
-	identity, err := a.identity()
+	kr, err := a.keyring(false)
+	if err != nil {
+		return err
+	}
+	ciphertexts := make([]string, len(keys))
+	for i, k := range keys {
+		ciphertexts[i] = kv.Data[k]
+	}
+	plain, errs, err := kr.Decrypt(ciphertexts)
 	if err != nil {
 		return err
 	}
 	failed := 0
-	for _, k := range keys {
-		decrypted, err := decryptValue(kv.Data[k], identity)
-		if err != nil {
-			fmt.Fprintf(a.errw, "Error: decrypting %s: %v\n", k, err)
+	for i, k := range keys {
+		if errs[i] != nil {
+			fmt.Fprintf(a.errw, "Error: decrypting %s: %v\n", k, errs[i])
 			failed++
 			continue
 		}
-		fn(k, decrypted)
+		fn(k, plain[i])
 	}
 	if failed > 0 {
 		fmt.Fprintf(a.errw, "Error: %d value(s) could not be decrypted\n", failed)
@@ -400,15 +411,11 @@ func (a *app) decryptCmd() *cobra.Command {
 		Short: "Decrypt text from stdin using the private key",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			identity, err := a.identity()
-			if err != nil {
-				return err
-			}
 			input, err := io.ReadAll(a.in)
 			if err != nil {
 				return fmt.Errorf("reading stdin: %w", err)
 			}
-			decrypted, err := decryptValue(string(input), identity)
+			decrypted, err := a.decryptOne(string(input), false)
 			if err != nil {
 				return fmt.Errorf("decrypting input: %w", err)
 			}

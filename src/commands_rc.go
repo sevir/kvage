@@ -11,7 +11,8 @@ import (
 const defaultRCFile = ".kvagerc"
 
 func (a *app) rcCmd() *cobra.Command {
-	return &cobra.Command{
+	var noPrompt bool
+	cmd := &cobra.Command{
 		Use:   "rc [file]",
 		Short: "Print the variables of an encrypted .kvagerc as shell exports",
 		Long: `Decrypt a .kvagerc file (./.kvagerc by default) and print the environment
@@ -41,11 +42,12 @@ that change how programs are found or loaded (PATH, LD_*, PROMPT_COMMAND,
 				allow = cfg.RC.Allow
 			}
 
-			identity, err := a.identity()
-			if err != nil {
-				return err
+			text, err := a.decryptOne(string(encrypted), noPrompt)
+			if errors.Is(err, errLocked) && noPrompt {
+				// From the shell hook: one line, no prompt, no failure.
+				fmt.Fprintf(a.errw, "kvage: %s not loaded, the key is locked. Load it with: eval \"$(kvage rc)\"\n", file)
+				return nil
 			}
-			text, err := decryptValue(string(encrypted), identity)
 			if err != nil {
 				return fmt.Errorf("decrypting %s: %w", file, err)
 			}
@@ -60,6 +62,8 @@ that change how programs are found or loaded (PATH, LD_*, PROMPT_COMMAND,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&noPrompt, "no-prompt", false, "never ask for the passphrase: with a locked key print a one-line notice and nothing else")
+	return cmd
 }
 
 func (a *app) rekeyCmd() *cobra.Command {
@@ -85,7 +89,7 @@ themselves when someone must lose access.`,
 			if noStore && rcFile == "" {
 				return errors.New("--no-store needs --rc")
 			}
-			identity, err := a.identity()
+			kr, err := a.keyring(false)
 			if err != nil {
 				return err
 			}
@@ -100,16 +104,24 @@ themselves when someone must lose access.`,
 				if err != nil {
 					return err
 				}
+				keys := kv.sortedKeys(nil)
+				ciphertexts := make([]string, len(keys))
+				for i, k := range keys {
+					ciphertexts[i] = kv.Data[k]
+				}
+				plain, errs, err := kr.Decrypt(ciphertexts)
+				if err != nil {
+					return err
+				}
 				out := &KeyValue{Data: make(map[string]string, len(kv.Data))}
 				failed := 0
-				for _, k := range kv.sortedKeys(nil) {
-					plain, err := decryptValue(kv.Data[k], identity)
-					if err != nil {
-						fmt.Fprintf(a.errw, "Error: decrypting %s: %v\n", k, err)
+				for i, k := range keys {
+					if errs[i] != nil {
+						fmt.Fprintf(a.errw, "Error: decrypting %s: %v\n", k, errs[i])
 						failed++
 						continue
 					}
-					enc, err := encryptValue(plain, recipients...)
+					enc, err := encryptValue(plain[i], recipients...)
 					if err != nil {
 						return fmt.Errorf("encrypting %s: %w", k, err)
 					}
@@ -129,7 +141,7 @@ themselves when someone must lose access.`,
 				if err != nil {
 					return fmt.Errorf("reading %s: %w", rcFile, err)
 				}
-				plain, err := decryptValue(string(encrypted), identity)
+				plain, err := a.decryptOne(string(encrypted), false)
 				if err != nil {
 					return fmt.Errorf("decrypting %s: %w", rcFile, err)
 				}

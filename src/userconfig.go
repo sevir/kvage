@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,6 +20,56 @@ type userConfig struct {
 		// may set. An entry ending in "*" matches a prefix.
 		Allow []string `yaml:"allow"`
 	} `yaml:"rc"`
+
+	Session struct {
+		// Mode is "session" (default: after the first passphrase prompt the
+		// key stays unlocked in a background agent until "kvage lock",
+		// logout or reboot) or "always" (ask for the passphrase every time,
+		// no agent).
+		Mode string `yaml:"mode"`
+		// Timeout locks the session after this long without use, e.g.
+		// "30m". Empty or "0" means no timeout.
+		Timeout string `yaml:"timeout"`
+	} `yaml:"session"`
+
+	Key struct {
+		// WarnPlaintext controls the reminder printed when the private key
+		// file is not passphrase-protected. Default true.
+		WarnPlaintext *bool `yaml:"warn_plaintext"`
+	} `yaml:"key"`
+}
+
+const (
+	sessionModeSession = "session"
+	sessionModeAlways  = "always"
+)
+
+func (c *userConfig) sessionMode() string {
+	if c.Session.Mode == "" {
+		return sessionModeSession
+	}
+	return c.Session.Mode
+}
+
+func (c *userConfig) sessionTimeout() (time.Duration, error) {
+	if c.Session.Timeout == "" || c.Session.Timeout == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(c.Session.Timeout)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("invalid session.timeout %q (use a duration such as 30m)", c.Session.Timeout)
+	}
+	return d, nil
+}
+
+func (c *userConfig) validate() error {
+	switch c.sessionMode() {
+	case sessionModeSession, sessionModeAlways:
+	default:
+		return fmt.Errorf("invalid session.mode %q (use session or always)", c.Session.Mode)
+	}
+	_, err := c.sessionTimeout()
+	return err
 }
 
 func userConfigPath() string {
@@ -37,6 +88,9 @@ func loadUserConfig() (*userConfig, error) {
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", userConfigPath(), err)
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", userConfigPath(), err)
 	}
 	return cfg, nil
 }
