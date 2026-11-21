@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,91 +13,108 @@ import (
 	"filippo.io/age"
 )
 
-func getKeyFromFile(keyPath string) (*age.X25519Identity, error) {
-	content, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %v", err)
+// keyPath resolves the private key file: --key wins over AGE_KEY_FILE.
+func (a *app) keyPath() (string, error) {
+	if a.keyFile != "" {
+		return a.keyFile, nil
 	}
-
-	lines := strings.Split(string(content), "\n")
-	if len(lines) < 3 {
-		return nil, fmt.Errorf("invalid key file format")
+	if p := os.Getenv("AGE_KEY_FILE"); p != "" {
+		return p, nil
 	}
-
-	identity, err := age.ParseX25519Identity(lines[2])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %v", err)
-	}
-
-	return identity, nil
+	return "", errors.New("no key file specified: use the --key flag or set the AGE_KEY_FILE environment variable")
 }
 
-func getPrivateKey(keyFile string) (*age.X25519Identity, error) {
-	keyPath := os.Getenv("AGE_KEY_FILE")
-	if keyPath == "" {
-		keyPath = keyFile
+// loadIdentity reads an age identity file (comments and blank lines allowed)
+// and returns its first X25519 identity.
+func loadIdentity(path string) (*age.X25519Identity, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading key file: %w", err)
 	}
-	if keyPath == "" {
-		return nil, fmt.Errorf("no key file specified")
+	defer f.Close()
+
+	identities, err := age.ParseIdentities(f)
+	if err != nil {
+		return nil, fmt.Errorf("parsing key file %s: %w", path, err)
 	}
-	return getKeyFromFile(keyPath)
+	for _, id := range identities {
+		if x, ok := id.(*age.X25519Identity); ok {
+			return x, nil
+		}
+	}
+	return nil, fmt.Errorf("key file %s has no X25519 identity", path)
 }
 
-func encryptValue(value string, identity *age.X25519Identity) (string, error) {
-	recipient := identity.Recipient()
+// identity returns the private key selected by flags and environment.
+func (a *app) identity() (*age.X25519Identity, error) {
+	path, err := a.keyPath()
+	if err != nil {
+		return nil, err
+	}
+	return loadIdentity(path)
+}
+
+func encryptValue(value string, recipients ...age.Recipient) (string, error) {
 	buf := &bytes.Buffer{}
-	w, err := age.Encrypt(buf, recipient)
+	w, err := age.Encrypt(buf, recipients...)
 	if err != nil {
 		return "", err
 	}
-
 	if _, err := io.WriteString(w, value); err != nil {
 		return "", err
 	}
 	if err := w.Close(); err != nil {
 		return "", err
 	}
-
 	return buf.String(), nil
 }
 
-func decryptValue(encryptedValue string, identity *age.X25519Identity) (string, error) {
-	r, err := age.Decrypt(strings.NewReader(encryptedValue), identity)
+func decryptValue(encryptedValue string, identities ...age.Identity) (string, error) {
+	r, err := age.Decrypt(strings.NewReader(encryptedValue), identities...)
 	if err != nil {
 		return "", err
 	}
-
 	decrypted, err := io.ReadAll(r)
 	if err != nil {
 		return "", err
 	}
-
 	return string(decrypted), nil
 }
 
-func generateKeyPair() error {
+// generateKeyPair writes a new identity to keys/key.txt in the current
+// directory. It refuses to overwrite an existing key.
+func generateKeyPair(out io.Writer) error {
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
-		return fmt.Errorf("error generating key pair: %v", err)
+		return fmt.Errorf("generating key pair: %w", err)
 	}
 
 	keysDir := "keys"
-	if err := os.MkdirAll(keysDir, 0700); err != nil {
-		return fmt.Errorf("error creating keys directory: %v", err)
+	if err := os.MkdirAll(keysDir, 0o700); err != nil {
+		return fmt.Errorf("creating keys directory: %w", err)
 	}
 
-	creationTime := time.Now().Format(time.RFC3339)
-	publicKey := identity.Recipient().String()
-	privateKeyContent := fmt.Sprintf("# created: %s\n# public key: %s\n%s",
-		creationTime,
-		publicKey,
+	content := fmt.Sprintf("# created: %s\n# public key: %s\n%s\n",
+		time.Now().Format(time.RFC3339),
+		identity.Recipient().String(),
 		identity.String())
 
 	privKeyPath := filepath.Join(keysDir, "key.txt")
-	if err := os.WriteFile(privKeyPath, []byte(privateKeyContent), 0600); err != nil {
-		return fmt.Errorf("error saving private key: %v", err)
+	f, err := os.OpenFile(privKeyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists: refusing to overwrite a private key", privKeyPath)
+		}
+		return fmt.Errorf("saving private key: %w", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return fmt.Errorf("saving private key: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("saving private key: %w", err)
 	}
 
-	fmt.Printf("Key pairs saved to: %s\n", privKeyPath)
+	fmt.Fprintf(out, "Key pairs saved to: %s\n", privKeyPath)
 	return nil
 }

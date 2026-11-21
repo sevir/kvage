@@ -2,24 +2,25 @@ package main
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 )
 
+// getConfigPath returns the per-user kvage configuration directory.
+// The locations are the same ones v1.11.0 used, so existing stores are found
+// without migration.
 func getConfigPath() string {
 	var configPath string
 	switch runtime.GOOS {
 	case "windows":
-		configPath = os.Getenv("APPDATA") // Carpeta AppData/Roaming en Windows
+		configPath = os.Getenv("APPDATA")
 	case "darwin":
-		configPath = filepath.Join(os.Getenv("HOME"), "Library", "Application Support") // MacOS
+		configPath = filepath.Join(os.Getenv("HOME"), "Library", "Application Support")
 	case "linux":
-		usr, err := user.Current()
-		if err == nil {
-			configPath = filepath.Join(usr.HomeDir, ".config") // Linux estándar
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			configPath = filepath.Join(home, ".config")
 		} else {
-			configPath = "/etc" // Alternativa si no se obtiene el usuario
+			configPath = "/etc"
 		}
 	default:
 		configPath = "/etc"

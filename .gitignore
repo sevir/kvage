@@ -2,3 +2,4 @@ kvage
 keys/*
 *.yaml
 build/*
+.claude/
