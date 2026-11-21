@@ -1,106 +1,324 @@
 # KVage
 
- terminal cli for saving and retrieving key-value pairs in a yaml file encrypting the values using [AGE encryption](https://github.com/FiloSottile/age) 
+Command line tool that keeps key-value pairs in a YAML file with every value
+encrypted with [age](https://github.com/FiloSottile/age).
 
+- Values are standard age files: anything kvage writes can be read with `age`.
+- The store can be shared: encrypt for several people with a `public-keys.txt`
+  and commit both files to git.
+- The private key can be protected with a passphrase and unlocked once per
+  session.
+- Encrypted `.kvagerc` files load environment variables when you enter a
+  directory.
 
- ## Usage
+## Install
 
-Optional flags
-
-```
--f --file <file> : specify the file to save the key-value pairs
--k --key <key> : specify the file key to use for encryption
-```
-
- List all key-value pairs
-
- `--filter <filter>` : filter the key-value pairs by key
-
- ```bash
- kvage list
- ```
-
- Generate a exportable env variables
-
- `--filter <filter>` : filter the key-value pairs by key
-
- ```bash
- kvage export
- ```
-> generate a list like:
-> ```bash
-> export MY_KEY="my_value"
-> export MY_KEY2="my_value2"
-> ```
-
-Save a key-value pair
+Download a binary from the releases page, or build it (Go 1.26 or newer):
 
 ```bash
-kvage set <key> <value>
+go build -o kvage ./src
 ```
 
-Update a key-value pair
+## Quick start
 
 ```bash
-kvage up <key> <value>
+kvage vault init          # create a passphrase-protected key
+kvage set github_token    # asks for the value without echo
+kvage get github_token
+kvage list                # values masked
 ```
 
-Get a value by key
+`vault init` puts the key in the kvage config directory
+(`~/.config/kvage/key.txt` on Linux). To use a key somewhere else, pass
+`--key <file>` or set `AGE_KEY_FILE`.
+
+## Commands
+
+Global flags:
+
+```
+-f, --file <file>   store file to use
+-k, --key <file>    private key file to use
+```
+
+| Command | What it does |
+|---|---|
+| `kvage set <key> [value]` | Save a value. Alias: `up`. |
+| `kvage get <key>` | Print a value. |
+| `kvage list [--filter text] [--reveal]` | List keys with masked values. |
+| `kvage search <pattern>` | Find keys by name (no decryption). |
+| `kvage search --value [pattern]` | Find keys by value. |
+| `kvage rm <key>` | Delete a key. |
+| `kvage export [--filter text]` | Print `export NAME='value'` lines. |
+| `kvage encrypt` / `kvage decrypt` | Encrypt or decrypt stdin to stdout. |
+| `kvage rekey [--rc[=file]] [--no-store]` | Re-encrypt for the current recipients. |
+| `kvage rc [file]` | Print the variables of a `.kvagerc` as exports. |
+| `kvage shellrc` | Print the shell hook that loads `.kvagerc` files. |
+| `kvage vault init` / `kvage vault passwd` | Protect the key with a passphrase. |
+| `kvage unlock` / `kvage lock` / `kvage status` | Session control. |
+| `kvage generate-key` | Write a new plain key to `./keys/key.txt`. |
+| `kvage version` | Print the version. |
+
+Errors go to stderr and make the command exit with a non-zero status.
+
+### Setting values
 
 ```bash
-kvage get <key>
+kvage set db_password            # prompted, no echo
+pass show db | kvage set db_password   # from stdin
+kvage set db_password 's3cret'   # works, but warns: it stays in your shell history
 ```
 
-Delete a key-value pair
+### Listing and searching
+
+`list` never prints full values unless you ask for them:
+
+```
+$ kvage list
+db_password: s3****et
+pin: ****
+$ kvage list --reveal
+```
+
+A masked value shows two characters at each end (one for values of 4 or 5
+characters, none below 4) around a fixed-width mask, so it does not reveal
+the length.
+
+`kvage search tok` matches key names, ignoring case, as a substring or as a
+glob (`git*`). `kvage search --value` asks for the text to look for (it is
+never taken from the command line) and lists the keys whose value contains
+it, masked.
+
+### Export
 
 ```bash
-kvage rm <key>
+eval "$(kvage export --filter aws)"
 ```
 
-Generate an AGE key pair
+Names are upper-cased and values are single-quoted. Keys whose name is not a
+valid shell variable name are skipped with a warning.
+
+## Where files are looked up
+
+Each file is resolved on its own; the first place that has it wins.
+
+| File | Order |
+|---|---|
+| Store | `--file`, `./.kvage/kvage.yaml`, `./kvage.yaml`, `<config>/kvage.yaml` |
+| Private key | `--key`, `./.kvage/key.txt`, `AGE_KEY_FILE`, `<config>/key.txt` |
+| Recipients | `public-keys.txt` in the same directory as the store |
+| Settings | `<config>/config.yaml` only |
+
+`<config>` is `~/.config/kvage` on Linux, `~/Library/Application Support/kvage`
+on macOS and `%APPDATA%\kvage` on Windows. Only the current directory is
+checked for `.kvage`, not its parents.
+
+`kvage status` shows which files are in use and why.
+
+Notes:
+
+- An empty `.kvage/` directory changes nothing. To get a project store,
+  create the file: `mkdir .kvage && touch .kvage/kvage.yaml`.
+- A key in `./.kvage/key.txt` wins over `AGE_KEY_FILE`. `set` warns when it
+  uses that key to write to a store outside `./.kvage`.
+- The recipients list always comes from the directory of the store being
+  written, so entering a project can never change who the values of your
+  personal store are encrypted for. `encrypt` and `rekey --rc`, which work on
+  project files, look at `./.kvage/public-keys.txt` first.
+- `config.yaml` is never read from a project directory.
+
+## Sharing a store (several recipients)
+
+Put a `public-keys.txt` next to the store, one age public key per line:
+
+```
+# team
+age1qy...   # alice
+age1zx...   # bob
+```
+
+From then on `set` and `encrypt` encrypt for everyone listed, and `set` does
+not need your private key at all. kvage warns when your own public key is not
+in the list. Without the file, values are encrypted for your own key only.
+
+After changing the list, re-encrypt what already exists:
 
 ```bash
-kvage generate-key
+kvage rekey            # the store
+kvage rekey --rc       # the store and ./.kvagerc
+kvage rekey --rc=path --no-store   # only that file
 ```
 
-## New .kvagerc file
+`rekey` writes nothing unless every value could be decrypted. The store and
+`public-keys.txt` can then be committed to git, as with SOPS.
 
-.kvagerc is a file encrypted with kvage that contains the shell code commands, ideal for storing private env variables in your repository
+Removing someone from the list does not take back what they could already
+read (they may have kept a copy of the store, and git keeps history). When
+someone must lose access, change the secrets themselves.
 
-1. encrypt the file with the command, encrypt command receives from the standard input the file to encrypt, and the output is the encrypted file:
+A store written by this version can still be read by kvage v1.11.0 as long as
+your key is one of the recipients.
+
+## `.kvagerc`: environment variables per directory
+
+A `.kvagerc` is an encrypted file with variable definitions:
 
 ```bash
-kvage encrypt < decrypted_file >.kvagerc
+cat > env.txt <<'END'
+# comments are fine
+export API_URL="https://api.example.com"
+export API_TOKEN='s3cret'
+CACHE_DIR=$HOME/.cache/myapp
+END
+kvage encrypt < env.txt > .kvagerc && rm env.txt
 ```
-2. install the shell command in your .bashrc
+
+Install the hook once in your `~/.bashrc`:
 
 ```bash
 echo 'eval "$(kvage shellrc)"' >> ~/.bashrc
 ```
 
-Now you can move into the directory with a .kvagerc file and the shell code decrypted will be available in your shell automatically
+When you enter a directory that has a `.kvagerc`, its variables are exported
+into your shell. `kvage decrypt < .kvagerc` shows the content.
 
-Also you can decrypt the file with the command:
+### Only variables, never code
 
-```bash
-kvage decrypt < .kvagerc > decrypted_file
+age does not authenticate who encrypted a file: anyone who knows your public
+key can create a `.kvagerc` that decrypts correctly. So the decrypted text is
+never given to the shell. `kvage rc` parses it and prints only
+`export NAME='value'` lines, and that is what the hook evaluates.
+
+Accepted:
+
+- `NAME=value` and `export NAME=value`, several per line
+- `#` comments, blank lines
+- `'single'` and `"double"` quotes, backslash escapes, values over several
+  lines inside quotes
+- `$VAR` and `${VAR}`, replaced by variables defined earlier in the file or
+  taken from the environment; a leading `~` is your home directory
+
+Ignored, with a warning that names the line but never its content: command
+substitution (`$(...)`, backticks), `${VAR:-default}` and similar, `;`, `|`,
+`&`, redirections, `alias`, functions, `source`, and any other command.
+
+**Upgrading from v1.11.0:** files that only contain `export NAME=value` lines
+keep working. Lines that ran commands, defined aliases or functions no longer
+have any effect.
+
+Variables that change how programs are found or loaded are not set either:
+`PATH`, `LD_*`, `DYLD_*`, `PROMPT_COMMAND`, `BASH_ENV`, `ENV`, `IFS`,
+`SHELLOPTS`, `HOME`, `SHELL`, `PS1`, `EDITOR`, `PAGER`, `GIT_SSH*`,
+`GIT_CONFIG*`, `PYTHONPATH`, `NODE_OPTIONS`, `AGE_KEY_FILE` and a few more
+(the full list is `rcBlockedNames` in `src/rc.go`). To allow some of them:
+
+```yaml
+# <config>/config.yaml
+rc:
+  allow: [PATH, "GIT_CONFIG*"]
 ```
 
+Only allow `PATH` if you trust everyone who can write a `.kvagerc` into a
+directory you enter.
 
-## Tasks
-
-### build
-
-Build the release for all platforms
+## Protecting the private key
 
 ```bash
-bash scripts/build.sh
+kvage vault init      # asks for a new passphrase twice
 ```
 
-### install:dependencies
+If you already have a key, `vault init` protects it in place: same key, same
+public key, nothing to re-encrypt. Otherwise it creates a new one. The result
+is the usual age identity file encrypted with a passphrase in the standard
+age format, so:
 
-Install the dependencies declared in the go.mod file
+- you can copy it to another machine and use it there with the passphrase;
+- `age -d -i key.txt file.age` works with it;
+- a copy of the file is useless without the passphrase.
+
+The public key is saved next to it as `key.txt.pub`, so `set` can encrypt
+without unlocking. `kvage vault passwd` changes the passphrase. A plain key
+file keeps working; kvage reminds you to protect it when used from a
+terminal (`key.warn_plaintext: false` in `config.yaml` turns that off).
+
+There is no recovery for a forgotten passphrase. Protecting a key in place
+does not erase older copies of the plain file (backups, other machines, old
+disk blocks): if the plain key may have leaked, protect a **new** key and
+`rekey`.
+
+The passphrase is always asked for on the terminal, never read from stdin,
+so `kvage decrypt < file` keeps working.
+
+### Sessions
+
+By default you type the passphrase once: the first command that needs the key
+asks for it and starts a background agent (a `kvage` process) that keeps the
+key in memory and decrypts for later commands.
 
 ```bash
-go mod tidy
+kvage unlock    # optional: open the session explicitly
+kvage status    # files in use, session state, agent protections
+kvage lock      # forget the key and stop the agent
 ```
+
+The session ends on `kvage lock`, when you log out, on reboot, or after the
+inactivity timeout if you set one:
+
+```yaml
+# <config>/config.yaml
+session:
+  mode: session     # or "always": ask every time, no agent
+  timeout: 30m      # lock after 30 minutes without use (default: none)
+```
+
+With the key locked, the `.kvagerc` hook does not ask for the passphrase on
+every `cd`: it prints one line and loads nothing. Run `eval "$(kvage rc)"` to
+unlock and load.
+
+Sessions exist on Linux and macOS. On Windows the passphrase is asked for on
+every command.
+
+## Security: what is and is not protected
+
+kvage protects secrets **at rest**: a copy of the store, of a `.kvagerc` or
+of a passphrase-protected key file is useless without the passphrase (and,
+for the store, without the key).
+
+While a session is open, on Linux:
+
+- the key lives only in the agent's memory, not on disk in the clear;
+- the agent cannot be ptraced or have its memory read by other programs of
+  your user (`PR_SET_DUMPABLE=0`), produces no core dumps, and keeps its
+  memory out of swap when `RLIMIT_MEMLOCK` allows it (`kvage status` tells);
+- the agent only answers your user, and only the kvage executable.
+
+Limits you should know:
+
+- **Any program running as you can use an open session.** The executable
+  check stops programs from talking to the agent directly, but nothing stops
+  them from running `kvage get` themselves. An open session means "programs I
+  run can read my secrets". Use `kvage lock`, a timeout, or
+  `session.mode: always` when that matters.
+- **root is not kept out.** root can read the agent's memory and take the
+  key, capture your passphrase as you type it, or read values as they are
+  decrypted. Nothing in kvage defends against a compromised root or kernel.
+- **Locking is ending the process.** Go cannot reliably erase every copy of a
+  key from its own memory, so `lock` stops the agent. The memory of a
+  hibernated machine, a crash dump or a VM snapshot taken while a session was
+  open may contain the key.
+- On macOS the agent checks only the user and applies no memory protection.
+- Secrets passed as command line arguments (`kvage set key value`) are
+  visible in your shell history and, briefly, to other users in the process
+  list. Prefer the prompt or stdin.
+- `list --reveal`, `get` and `export` print secrets to the terminal; they end
+  up in your scrollback.
+
+## Development
+
+```bash
+go test ./src          # tests use temporary directories and keys only
+go vet ./src
+bash scripts/build.sh  # release binaries for all platforms, into build/
+```
+
+See `AGENTS.md` for the layout and conventions.

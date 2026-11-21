@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -424,5 +426,88 @@ func TestShellHookEvaluatesOnlyExports(t *testing.T) {
 	hook, _ := e.mustRun("", "shellrc")
 	if strings.Contains(hook, "kvage decrypt") || !strings.Contains(hook, "kvage rc ") {
 		t.Errorf("hook still evaluates decrypted text:\n%s", hook)
+	}
+}
+
+// Whatever a .kvagerc contains, evaluating the output of the parser in a
+// real shell must do nothing but set the reported variables to the reported
+// values. The inputs are random mixes of shell metacharacters.
+func TestRCOutputIsInertInBash(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not available")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pwned")
+	tokens := []string{
+		"A", "B_1", "export ", "=", "=", "=", " ", "\n", "\n", "\t", "'", "'", "\"", "\"", "\\", "\\\n",
+		"$", "${", "}", "$(", ")", "`", ";", "|", "&", "<", ">", "#", "~", "!", "*", "?", "[", "]", "{",
+		"touch " + marker, "$(touch " + marker + ")", "`touch " + marker + "`", "$HOME", "${X}", "é", "\r\n", "\x00", "\x1b[0m", "--", "x y",
+	}
+	rnd := rand.New(rand.NewSource(1))
+	lookup := func(k string) (string, bool) {
+		return "v'\"$(touch " + marker + ")`;", true
+	}
+
+	var script strings.Builder
+	var want []rcVar
+	for i := 0; i < 3000; i++ {
+		// A well-formed start, then anything: most inputs get far enough
+		// into the value syntax to matter.
+		var in strings.Builder
+		if rnd.Intn(2) == 0 {
+			in.WriteString("export ")
+		}
+		in.WriteString("NAME=")
+		words := []string{"plain", "a b", "it's", "x=y", "/p/a:th", "-n", "%s"}
+		for n := rnd.Intn(8); n > 0; n-- {
+			if rnd.Intn(3) == 0 {
+				in.WriteString(words[rnd.Intn(len(words))])
+			} else {
+				in.WriteString(tokens[rnd.Intn(len(tokens))])
+			}
+		}
+		in.WriteString("\n")
+		vars, _ := parseRC(in.String(), lookup, nil)
+		for j, v := range vars {
+			if !validEnvName(v.Name) {
+				t.Fatalf("invalid name %q from %q", v.Name, in.String())
+			}
+			// A unique name per assignment so every value can be checked.
+			name := fmt.Sprintf("V_%d_%d", i, j)
+			fmt.Fprintf(&script, "export %s=%s\n", name, shellQuote(v.Value))
+			want = append(want, rcVar{name, v.Value})
+		}
+	}
+	if len(want) < 500 {
+		t.Fatalf("only %d assignments generated: the test is not exercising the parser", len(want))
+	}
+	for _, v := range want {
+		fmt.Fprintf(&script, "printf '%%s\\0' \"$%s\"\n", v.Name)
+	}
+
+	file := filepath.Join(dir, "exports.sh")
+	writeFile(t, file, script.String())
+	cmd := exec.Command(bash, "--noprofile", "--norc", "-c", `eval "$(cat "$1")"`, "bash", file)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bash failed: %v", err)
+	}
+	got := strings.Split(string(out), "\x00")
+	if len(got) != len(want)+1 {
+		t.Fatalf("bash printed %d values, want %d", len(got)-1, len(want))
+	}
+	for i, v := range want {
+		if got[i] != v.Value {
+			t.Fatalf("value %d: shell has %q, parser reported %q", i, got[i], v.Value)
+		}
+	}
+	if fileExists(marker) {
+		t.Fatal("evaluating the exports executed a command")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("unexpected files created: %v", entries)
 	}
 }

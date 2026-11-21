@@ -193,6 +193,9 @@ func (p *rcParser) value() (string, error) {
 				if ch == '\'' {
 					break
 				}
+				if ch == 0 {
+					return "", fmt.Errorf("NUL byte")
+				}
 				b.WriteByte(ch)
 			}
 		case '"':
@@ -224,6 +227,8 @@ func (p *rcParser) value() (string, error) {
 					}
 				case '`':
 					return "", fmt.Errorf("command substitution is not allowed")
+				case 0:
+					return "", fmt.Errorf("NUL byte")
 				default:
 					b.WriteByte(ch)
 				}
@@ -241,6 +246,8 @@ func (p *rcParser) value() (string, error) {
 			}
 		case '`':
 			return "", fmt.Errorf("command substitution is not allowed")
+		case 0:
+			return "", fmt.Errorf("NUL byte")
 		case ';', '|', '&', '<', '>', '(', ')':
 			return "", fmt.Errorf("unsupported shell syntax %q", c)
 		case '~':
@@ -254,6 +261,10 @@ func (p *rcParser) value() (string, error) {
 			b.WriteByte(c)
 		}
 		first = false
+	}
+	// A shell variable cannot hold a NUL byte, however it was written.
+	if strings.IndexByte(b.String(), 0) >= 0 {
+		return "", fmt.Errorf("NUL byte")
 	}
 	return b.String(), nil
 }

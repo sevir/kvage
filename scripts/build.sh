@@ -3,7 +3,7 @@
 # Set the binary name
 BINARY_NAME="kvage"
 MAIN_PATH="./src"
-VERSION="v1.11.0"
+VERSION="v1.12.0"
 
 # Helper function to zip a binary
 zip_binary() {
@@ -14,6 +14,9 @@ zip_binary() {
     cd ..
 }
 
+# Static binaries on every target: no libc dependency and no LD_PRELOAD.
+export CGO_ENABLED=0
+
 # Create output directory
 mkdir -p build
 
@@ -23,10 +26,11 @@ rm -rf build/*
 # Build for Windows (amd64)
 GOOS=windows GOARCH=amd64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-windows-amd64.exe" $MAIN_PATH
 
-# Build for Linux
+# Build for Linux. The -musl artifact is the same static binary as
+# linux-amd64; it is kept so existing download links keep working.
 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-linux-amd64" $MAIN_PATH
 GOOS=linux GOARCH=arm64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-linux-arm64" $MAIN_PATH
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-linux-amd64-musl" $MAIN_PATH
+GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-linux-amd64-musl" $MAIN_PATH
 
 # Build for macOS
 GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'main.Version=${VERSION}'" -o "build/${BINARY_NAME}-darwin-amd64" $MAIN_PATH
