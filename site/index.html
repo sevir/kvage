@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kvage: encrypted key value secrets for your shell, your team and your agents</title>
+<meta name="description" content="kvage is an open source command line tool that keeps key value secrets in a YAML file with every value encrypted with age. Passphrase protected key, sessions, shared stores and environment variables per directory.">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://sevir.github.io/kvage/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="kvage">
+<meta property="og:title" content="kvage: encrypted key value secrets for your shell, your team and your agents">
+<meta property="og:description" content="A command line tool that keeps secrets in a YAML file with every value encrypted with age. Unlock once per session, share the store through git, load project variables on cd.">
+<meta property="og:url" content="https://sevir.github.io/kvage/">
+<meta property="og:image" content="https://sevir.github.io/kvage/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A vault door behind bars with an open padlock, and two robots holding keys.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add('js');</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
+  <symbol id="i-mask" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="3"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></symbol>
+  <symbol id="i-prompt" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 10l3 2-3 2M13 15h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 12v3"/><circle cx="12" cy="11.5" r=".6"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4v10l-8 4-8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></symbol>
+  <symbol id="i-status" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 12v3M20 12v2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
+
+<header class="nav">
+  <div class="nav-bar">
+    <a class="brand" href="#top" aria-label="kvage, back to top">
+      <svg viewBox="0 0 64 64" width="24" height="24" aria-hidden="true"><path d="M21 30v-8a11 11 0 0 1 22 0v8" fill="none" stroke="#d0d0d0" stroke-width="5" stroke-linecap="round"/><rect x="14" y="29" width="36" height="26" rx="6" fill="#e3b341"/><circle cx="32" cy="39" r="4" fill="#131209"/><rect x="30" y="40" width="4" height="9" rx="2" fill="#131209"/></svg>
+      <span>kvage</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="menu" aria-label="Open menu">
+      <span></span><span></span>
+    </button>
+  </div>
+  <nav id="menu" class="nav-menu" aria-label="Main">
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#teams">Teams</a></li>
+      <li><a href="#agents">Agents</a></li>
+      <li><a href="#key">Key protection</a></li>
+      <li><a href="#limits">Limits</a></li>
+      <li><a href="#quick-start">Quick start</a></li>
+      <li><a class="btn btn-small" href="https://github.com/sevir/kvage">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- Hero -->
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Open source command line tool</p>
+      <h1>Encrypted secrets<br> for you, your team<br> and your agents</h1>
+      <p class="lead">kvage keeps key value pairs in a YAML file with every value encrypted with <a href="https://github.com/FiloSottile/age">age</a>. Type your passphrase once per session, share the store through git, and load project variables when you enter a directory.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/sevir/kvage/releases">Download kvage</a>
+        <a class="text-link" href="#quick-start">Read the quick start</a>
+      </div>
+      <ul class="proof" aria-label="Facts">
+        <li>MIT license</li>
+        <li>Linux, macOS and Windows</li>
+        <li>Values are standard age files</li>
+      </ul>
+    </div>
+
+    <div class="hero-art">
+      <svg class="vault" viewBox="0 0 560 480" role="img" aria-labelledby="vault-title vault-desc">
+        <title id="vault-title">A vault behind bars</title>
+        <desc id="vault-desc">A vault door behind prison bars. The padlock on the bars opens, the vault wheel turns, and two small robots each receive a key.</desc>
+
+        <!-- floor -->
+        <rect x="8" y="472" width="544" height="2" rx="1" fill="#313131"/>
+
+        <!-- wall plate and door -->
+        <rect x="110" y="30" width="340" height="350" rx="16" fill="#181818" stroke="#313131" stroke-width="2"/>
+        <circle cx="280" cy="190" r="128" fill="#272727" stroke="#4a4a4a" stroke-width="6"/>
+        <circle cx="280" cy="190" r="104" fill="none" stroke="#3d3d3d" stroke-width="2"/>
+        <circle class="v-glow" cx="280" cy="190" r="128" fill="none" stroke="#5fd38d" stroke-width="2"/>
+        <g fill="#5a5a5a">
+          <circle cx="396" cy="190" r="5"/><circle cx="362" cy="272" r="5"/><circle cx="280" cy="306" r="5"/><circle cx="198" cy="272" r="5"/>
+          <circle cx="164" cy="190" r="5"/><circle cx="198" cy="108" r="5"/><circle cx="280" cy="74" r="5"/><circle cx="362" cy="108" r="5"/>
+        </g>
+        <rect x="136" y="140" width="14" height="30" rx="4" fill="#313131"/>
+        <rect x="136" y="210" width="14" height="30" rx="4" fill="#313131"/>
+
+        <!-- wheel -->
+        <g class="v-wheel">
+          <g stroke="#e3b341" stroke-width="6" stroke-linecap="round">
+            <line x1="204" y1="190" x2="356" y2="190"/>
+            <line x1="204" y1="190" x2="356" y2="190" transform="rotate(60 280 190)"/>
+            <line x1="204" y1="190" x2="356" y2="190" transform="rotate(120 280 190)"/>
+          </g>
+          <circle cx="280" cy="190" r="30" fill="#272727" stroke="#e3b341" stroke-width="6"/>
+          <circle cx="280" cy="190" r="9" fill="#e3b341"/>
+        </g>
+
+        <!-- bars -->
+        <g fill="#272727" stroke="#454545" stroke-width="1.5">
+          <rect x="150" y="30" width="10" height="350" rx="5"/>
+          <rect x="200" y="30" width="10" height="350" rx="5"/>
+          <rect x="250" y="30" width="10" height="350" rx="5"/>
+          <rect x="300" y="30" width="10" height="350" rx="5"/>
+          <rect x="350" y="30" width="10" height="350" rx="5"/>
+          <rect x="400" y="30" width="10" height="350" rx="5"/>
+          <rect x="104" y="24" width="352" height="16" rx="8"/>
+          <rect x="104" y="296" width="352" height="12" rx="6"/>
+          <rect x="104" y="370" width="352" height="16" rx="8"/>
+        </g>
+
+        <!-- padlock -->
+        <path class="v-shackle" d="M262 318v-18a18 18 0 0 1 36 0v18" fill="none" stroke="#d0d0d0" stroke-width="7" stroke-linecap="round"/>
+        <rect x="250" y="316" width="60" height="48" rx="8" fill="#e3b341"/>
+        <circle cx="280" cy="334" r="6" fill="#131209"/>
+        <rect x="277" y="336" width="6" height="14" rx="3" fill="#131209"/>
+
+        <!-- robot, left -->
+        <g transform="translate(18 372)">
+          <line x1="34" y1="0" x2="34" y2="-10" stroke="#6a6a6a" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="34" cy="-13" r="4" fill="#4a4a4a"/>
+          <circle class="v-led v-led-l" cx="34" cy="-13" r="4" fill="#5fd38d"/>
+          <rect x="12" y="0" width="44" height="34" rx="8" fill="#272727" stroke="#5a5a5a" stroke-width="2"/>
+          <g class="v-eyes" fill="#f2f2f2"><circle cx="26" cy="17" r="4"/><circle cx="42" cy="17" r="4"/></g>
+          <rect x="6" y="40" width="56" height="44" rx="10" fill="#272727" stroke="#5a5a5a" stroke-width="2"/>
+          <rect x="22" y="52" width="24" height="12" rx="3" fill="#181818" stroke="#454545"/>
+          <path d="M62 56l22-8" stroke="#5a5a5a" stroke-width="6" stroke-linecap="round"/>
+          <rect x="16" y="84" width="12" height="16" rx="3" fill="#313131"/>
+          <rect x="40" y="84" width="12" height="16" rx="3" fill="#313131"/>
+        </g>
+        <!-- robot, right -->
+        <g transform="translate(542 372) scale(-1 1)">
+          <line x1="34" y1="0" x2="34" y2="-10" stroke="#6a6a6a" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="34" cy="-13" r="4" fill="#4a4a4a"/>
+          <circle class="v-led v-led-r" cx="34" cy="-13" r="4" fill="#5fd38d"/>
+          <rect x="12" y="0" width="44" height="34" rx="8" fill="#272727" stroke="#5a5a5a" stroke-width="2"/>
+          <g class="v-eyes v-eyes-r" fill="#f2f2f2"><circle cx="26" cy="17" r="4"/><circle cx="42" cy="17" r="4"/></g>
+          <rect x="6" y="40" width="56" height="44" rx="10" fill="#272727" stroke="#5a5a5a" stroke-width="2"/>
+          <rect x="22" y="52" width="24" height="12" rx="3" fill="#181818" stroke="#454545"/>
+          <path d="M62 56l22-8" stroke="#5a5a5a" stroke-width="6" stroke-linecap="round"/>
+          <rect x="16" y="84" width="12" height="16" rx="3" fill="#313131"/>
+          <rect x="40" y="84" width="12" height="16" rx="3" fill="#313131"/>
+        </g>
+
+        <!-- keys handed to the robots -->
+        <g transform="translate(106 416)">
+          <g class="v-key v-key-l">
+            <g transform="rotate(-60) scale(1.3)" fill="none" stroke="#e3b341" stroke-width="3.5" stroke-linecap="round">
+              <circle cx="0" cy="0" r="7"/><path d="M7 0h22M21 0v7M27 0v6"/>
+            </g>
+          </g>
+        </g>
+        <g transform="translate(454 416)">
+          <g class="v-key v-key-r">
+            <g transform="rotate(-120) scale(1.3)" fill="none" stroke="#e3b341" stroke-width="3.5" stroke-linecap="round">
+              <circle cx="0" cy="0" r="7"/><path d="M7 0h22M21 0v-7M27 0v-6"/>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- Terminal demo -->
+<section class="section" id="demo" aria-labelledby="demo-h">
+  <div class="wrap split reveal">
+    <div>
+      <h2 id="demo-h">From an empty machine to a masked list of secrets</h2>
+      <p>Create a passphrase protected key, save a value at a prompt that does not echo, and read it back. <code>list</code> never prints full values unless you ask for them.</p>
+      <p>A masked value shows two characters at each end around a mask of fixed width, so it does not reveal the length. Short values show less, and values under four characters show nothing.</p>
+    </div>
+    <div class="term" role="group" aria-label="Terminal example">
+      <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span><b>bash</b></div>
+<pre tabindex="0"><code><span class="c"># create a passphrase-protected key</span>
+<span class="p">$</span> kvage vault init
+
+<span class="c"># prompted, no echo</span>
+<span class="p">$</span> kvage set db_password
+<span class="p">$</span> kvage set pin
+
+<span class="p">$</span> kvage list
+<span class="o">db_password: s3****et</span>
+<span class="o">pin: ****</span>
+
+<span class="c"># forget the key and stop the agent</span>
+<span class="p">$</span> kvage lock</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Tagline reveal -->
+<section class="tagline" aria-label="In short">
+  <div class="wrap">
+    <p class="tagline-text" data-words>Encrypted on disk.<br> Unlocked once per session.<br> Locked again with one command.</p>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section" id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <h2 id="features-h">Small commands that keep secrets off your screen and out of your history</h2>
+    </div>
+    <ul class="grid reveal">
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-mask"/></svg>
+        <h3>Masked listing</h3>
+        <p><code>kvage list</code> shows every key with its value masked. Add <code>--reveal</code> only when you want the full values.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-prompt"/></svg>
+        <h3>Prompted input</h3>
+        <p><code>kvage set name</code> asks for the value without echo, or reads it from stdin. Nothing is left in your shell history.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+        <h3>Search by name or value</h3>
+        <p>Match key names as a substring or a glob with no decryption. <code>search --value</code> asks for the text at a prompt and lists matches masked.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+        <h3>Standard age files</h3>
+        <p>Every value is a standard age file inside plain YAML. Anything kvage writes can be read with <code>age</code> itself.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
+        <h3>A store per project</h3>
+        <p>A <code>.kvage/</code> directory gives a project its own store, key and recipients. Only the current directory is checked, never its parents.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>
+        <h3>Export to the environment</h3>
+        <p><code>kvage export</code> prints <code>export NAME='value'</code> lines, with a filter when you only need a few.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-status"/></svg>
+        <h3>No guessing which file</h3>
+        <p><code>kvage status</code> shows which store, key and recipients are in use and why, plus the session state.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>
+        <h3>One static binary</h3>
+        <p>Written in Go and released as a single binary for Linux, macOS and Windows. Download it and run it.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- Teams -->
+<section class="section" id="teams" aria-labelledby="teams-h">
+  <div class="wrap split reveal">
+    <div>
+      <p class="eyebrow">For teams</p>
+      <h2 id="teams-h">Commit the store to git and let the whole team read it</h2>
+      <p>Put a <code>public-keys.txt</code> next to the store with one age public key per line. From then on every value is encrypted for everyone listed, and the store can be committed to git together with the list, as with SOPS.</p>
+      <ul class="checks">
+        <li><strong>Writing needs no private key.</strong> <code>set</code> encrypts for the listed recipients without unlocking anything.</li>
+        <li><strong>One command after the list changes.</strong> <code>kvage rekey</code> encrypts the existing values again for the current recipients, and writes nothing unless every value could be decrypted.</li>
+        <li><strong>Your personal store stays yours.</strong> The recipients list always comes from the directory of the store being written, so entering a project cannot change who your own values are encrypted for.</li>
+      </ul>
+      <p class="note">Removing someone from the list does not take back what they could already read. When someone must lose access, change the secrets themselves.</p>
+    </div>
+    <div class="stack">
+      <div class="term" role="group" aria-label="Example public-keys.txt file">
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span><b>public-keys.txt</b></div>
+<pre tabindex="0"><code><span class="c"># team</span>
+age1qy...   <span class="c"># alice</span>
+age1zx...   <span class="c"># bob</span></code></pre>
+      </div>
+      <div class="term" role="group" aria-label="Rekey commands">
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span><b>bash</b></div>
+<pre tabindex="0"><code><span class="p">$</span> kvage rekey            <span class="c"># the store</span>
+<span class="p">$</span> kvage rekey --rc       <span class="c"># the store and ./.kvagerc</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Agents -->
+<section class="section" id="agents" aria-labelledby="agents-h">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <p class="eyebrow">For agents and automation</p>
+      <h2 id="agents-h">Give coding agents and scripts the credentials they need, and nothing to execute</h2>
+      <p>You unlock once. The tools you start after that read what they need through the same commands you use, and a project file can only ever hand them variables.</p>
+    </div>
+    <ul class="grid grid-3 reveal">
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-key"/></svg>
+        <h3>One passphrase per session</h3>
+        <p>The first command that needs the key asks for the passphrase and starts a background agent that decrypts for later commands. The passphrase is always asked on the terminal, never read from stdin, so pipes keep working.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+        <h3>Variables on cd, never code</h3>
+        <p>An encrypted <code>.kvagerc</code> exports its variables when you enter the directory. The decrypted text is never given to the shell: kvage parses it and emits only <code>export NAME='value'</code> lines.</p>
+      </li>
+      <li class="card">
+        <svg class="icon" aria-hidden="true"><use href="#i-prompt"/></svg>
+        <h3>Nothing in argv or history</h3>
+        <p>Values come from a prompt or from stdin, for example <code>pass show db | kvage set db_password</code>. Passing a value as an argument works, and kvage warns you about it.</p>
+      </li>
+    </ul>
+    <div class="split split-top reveal">
+      <div>
+        <h3 class="h3-large">What a <code>.kvagerc</code> cannot do</h3>
+        <p>age does not authenticate who encrypted a file, so anyone who knows your public key can create a <code>.kvagerc</code> that decrypts correctly. kvage treats the file as untrusted for that reason.</p>
+        <ul class="checks">
+          <li>Command substitution, pipes, redirections, <code>alias</code>, functions and <code>source</code> are ignored, with a warning that names the line but never its content.</li>
+          <li>Variables that change how programs are found or loaded are not set: <code>PATH</code>, <code>LD_*</code>, <code>DYLD_*</code>, <code>BASH_ENV</code>, <code>NODE_OPTIONS</code>, <code>PYTHONPATH</code>, <code>GIT_SSH*</code> and more, unless you allow them in your own config.</li>
+          <li>With the key locked, the hook does not prompt on every <code>cd</code>. It prints one line and loads nothing.</li>
+          <li>Errors go to stderr and the command exits with a failure status, so scripts can stop.</li>
+        </ul>
+      </div>
+      <div class="term" role="group" aria-label="Creating a .kvagerc file">
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span><b>bash</b></div>
+<pre tabindex="0"><code><span class="p">$</span> cat &gt; env.txt &lt;&lt;'END'
+export API_HOST="api.example.com"
+export API_TOKEN='s3cret'
+CACHE_DIR=$HOME/.cache/myapp
+END
+<span class="p">$</span> kvage encrypt &lt; env.txt &gt; .kvagerc &amp;&amp; rm env.txt
+<span class="p">$</span> echo 'eval "$(kvage shellrc)"' &gt;&gt; ~/.bashrc</code></pre>
+      </div>
+    </div>
+    <p class="note reveal">Be clear about what an open session means: programs you run, agents included, can read your secrets by running <code>kvage get</code>. Use <code>kvage lock</code>, an inactivity timeout, or <code>session.mode: always</code> when that matters.</p>
+  </div>
+</section>
+
+<!-- Key protection -->
+<section class="section" id="key" aria-labelledby="key-h">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <p class="eyebrow">How the key is protected</p>
+      <h2 id="key-h">Three layers between your private key and a copied file</h2>
+    </div>
+    <ol class="layers reveal">
+      <li class="card">
+        <div class="layer-top"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span class="tag">At rest</span></div>
+        <h3>A passphrase on the key file</h3>
+        <p><code>kvage vault init</code> encrypts your age identity with a passphrase, in the standard age format. If you already have a key it is protected in place, with the same public key and nothing to encrypt again.</p>
+        <ul class="plain">
+          <li>A copy of the file is useless without the passphrase.</li>
+          <li><code>age -d -i key.txt file.age</code> works with it.</li>
+          <li>Copy it to another machine and use it there.</li>
+        </ul>
+      </li>
+      <li class="card">
+        <div class="layer-top"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg><span class="tag">In use</span></div>
+        <h3>A session agent that holds the key</h3>
+        <p><code>unlock</code>, <code>lock</code> and <code>status</code> control a background agent that keeps the key in memory, never on disk in the clear. The session ends on lock, logout, reboot or an optional inactivity timeout.</p>
+        <ul class="plain">
+          <li>On Linux other programs of your user cannot ptrace it or read its memory.</li>
+          <li>No core dumps, and memory kept out of swap when the system limit allows it.</li>
+          <li>It answers only your user, and only the kvage executable.</li>
+        </ul>
+      </li>
+      <li class="card">
+        <div class="layer-top"><svg class="icon" aria-hidden="true"><use href="#i-chip"/></svg><span class="tag tag-soon">Linux with TPM 2.0</span></div>
+        <h3>Sessions guarded by the TPM</h3>
+        <p>While a session is open the unlocked key is sealed in the machine's TPM 2.0 and only materialises in memory for the milliseconds each command needs.</p>
+        <ul class="plain">
+          <li>A memory image (hibernation, swap, crash dump) does not contain the key.</li>
+          <li>The session ends on reboot and on hibernation; it costs one TPM operation per command.</li>
+          <li>The limits below still apply to root and to your own programs.</li>
+        </ul>
+      </li>
+    </ol>
+    <p class="note reveal">Sessions exist on Linux and macOS. On macOS the agent checks only the user and applies no memory protection. On Windows the passphrase is asked for on every command.</p>
+  </div>
+</section>
+
+<!-- Limits -->
+<section class="section" id="limits" aria-labelledby="limits-h">
+  <div class="wrap">
+    <div class="limits reveal">
+      <div class="section-head">
+        <p class="eyebrow">Honest limits</p>
+        <h2 id="limits-h">What it does not protect against</h2>
+        <p>kvage protects secrets at rest: a copy of the store, of a <code>.kvagerc</code> or of a passphrase protected key file is useless without the passphrase. These are the cases it does not cover.</p>
+      </div>
+      <ul class="limit-list">
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>root</h3><p>root can read the agent's memory and take the key, capture your passphrase as you type it, or read values as they are decrypted. Nothing in kvage defends against a compromised root or kernel.</p></div>
+        </li>
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>Other programs of your own user while a session is open</h3><p>They cannot talk to the agent directly, but nothing stops them from running <code>kvage get</code> themselves. An open session means that programs you run can read your secrets.</p></div>
+        </li>
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>Memory images of an ordinary session</h3><p>Locking means ending the agent process. Without the TPM guard, the memory of a hibernated machine, a crash dump or a VM snapshot taken while a session was open may contain the key.</p></div>
+        </li>
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>What you print or type in the clear</h3><p><code>get</code>, <code>export</code> and <code>list --reveal</code> print secrets that stay in your scrollback. A value passed as an argument stays in your shell history and is briefly visible in the process list.</p></div>
+        </li>
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>A forgotten passphrase or an old plain key</h3><p>There is no recovery for a forgotten passphrase. Protecting a key in place does not erase older copies of the plain file, so if it may have leaked, protect a new key and rekey.</p></div>
+        </li>
+        <li>
+          <svg class="icon icon-x" aria-hidden="true"><use href="#i-x"/></svg>
+          <div><h3>Access someone already had</h3><p>A removed recipient may have kept a copy of the store, and git keeps history. Change the secrets themselves.</p></div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Quick start -->
+<section class="section" id="quick-start" aria-labelledby="qs-h">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <p class="eyebrow">Quick start</p>
+      <h2 id="qs-h">From download to first secret in three steps</h2>
+    </div>
+    <ol class="steps reveal">
+      <li class="card">
+        <span class="step-n" aria-hidden="true">1</span>
+        <h3>Get the binary</h3>
+        <p>Download the binary for your platform from the <a href="https://github.com/sevir/kvage/releases">releases page</a>, or build it from source with Go 1.26 or newer.</p>
+        <pre tabindex="0"><code><span class="p">$</span> go build -o kvage ./src</code></pre>
+      </li>
+      <li class="card">
+        <span class="step-n" aria-hidden="true">2</span>
+        <h3>Create a protected key</h3>
+        <p>kvage asks for a new passphrase twice and stores the key in its config directory.</p>
+        <pre tabindex="0"><code><span class="p">$</span> kvage vault init</code></pre>
+      </li>
+      <li class="card">
+        <span class="step-n" aria-hidden="true">3</span>
+        <h3>Store and read a secret</h3>
+        <p>The value is asked for without echo. Listing keeps it masked.</p>
+        <pre tabindex="0"><code><span class="p">$</span> kvage set github_token
+<span class="p">$</span> kvage get github_token
+<span class="p">$</span> kvage list</code></pre>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq" aria-labelledby="faq-h">
+  <div class="wrap narrow">
+    <div class="section-head reveal">
+      <h2 id="faq-h">Questions people ask before trusting a secrets tool</h2>
+    </div>
+    <div class="faq reveal">
+      <details>
+        <summary>Can I read my secrets without kvage?</summary>
+        <p>Yes. Values are standard age files and a protected key is a standard age identity encrypted with a passphrase, so <code>age</code> can decrypt both.</p>
+      </details>
+      <details>
+        <summary>What happens if I forget the passphrase?</summary>
+        <p>There is no recovery. Keep the passphrase somewhere you trust.</p>
+      </details>
+      <details>
+        <summary>Can a <code>.kvagerc</code> from a repository run code on my machine?</summary>
+        <p>No. kvage parses the decrypted file and gives the shell only <code>export NAME='value'</code> lines. Commands, aliases and functions are ignored, and variables such as <code>PATH</code> or <code>LD_*</code> are not set unless you allow them in your own config.</p>
+      </details>
+      <details>
+        <summary>How do I remove a teammate?</summary>
+        <p>Delete their line from <code>public-keys.txt</code> and run <code>kvage rekey</code>. They may have kept a copy of the store, and git keeps history, so also change the secrets they could read.</p>
+      </details>
+      <details>
+        <summary>Does it work on Windows and macOS?</summary>
+        <p>Yes, with differences. Sessions exist on Linux and macOS, and the memory protections of the agent apply on Linux only. On Windows the passphrase is asked for on every command.</p>
+      </details>
+      <details>
+        <summary>Do I have to protect my key with a passphrase?</summary>
+        <p>No. A plain key file keeps working, and kvage reminds you to protect it when used from a terminal. You can turn that reminder off in <code>config.yaml</code>.</p>
+      </details>
+      <details>
+        <summary>Can I stop the session from staying open all day?</summary>
+        <p>Yes. Set <code>session.timeout</code> to lock after a period without use, or <code>session.mode: always</code> to be asked every time with no agent at all.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<section class="section final" aria-labelledby="final-h">
+  <div class="wrap narrow center reveal">
+    <h2 id="final-h">Put your secrets behind a passphrase today</h2>
+    <p>Free and open source under the MIT license. One binary, no account, no server.</p>
+    <div class="cta-row cta-center">
+      <a class="btn btn-primary" href="https://github.com/sevir/kvage/releases">Download kvage</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <p><strong>kvage</strong> is released under the MIT license.</p>
+    <ul>
+      <li><a href="https://github.com/sevir/kvage">Source on GitHub</a></li>
+      <li><a href="https://github.com/sevir/kvage/releases">Releases</a></li>
+      <li><a href="https://github.com/FiloSottile/age">age</a></li>
+      <li><a href="#top">Back to top</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>
