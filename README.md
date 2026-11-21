@@ -3,6 +3,8 @@
 Command line tool that keeps key-value pairs in a YAML file with every value
 encrypted with [age](https://github.com/FiloSottile/age).
 
+Website: https://www.sevir.org/kvage/
+
 - Values are standard age files: anything kvage writes can be read with `age`.
 - The store can be shared: encrypt for several people with a `public-keys.txt`
   and commit both files to git.

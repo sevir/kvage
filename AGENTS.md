@@ -39,6 +39,9 @@ src/
   kvagerc.txt        the bash hook printed by `kvage shellrc` (embedded)
   *_test.go          tests
 scripts/build.sh     release build for 6 targets; holds the version number
+site/                static marketing site (plain HTML/CSS/JS, no build step, no
+                     external requests), published at https://www.sevir.org/kvage/
+.github/workflows/pages.yml   deploys site/ to GitHub Pages on push to main
 keys/                ignored by jj/git; may contain a REAL private key
 build/               ignored; release artifacts
 ```
