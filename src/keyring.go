@@ -170,11 +170,15 @@ func (a *app) addToAgent(kf *keyFile, identity *age.X25519Identity, cfg *userCon
 	if err != nil {
 		return err
 	}
-	if err := ensureAgent(timeout); err != nil {
+	if err := ensureAgent(timeout, cfg.tpmMode()); err != nil {
 		return err
 	}
-	_, err = agentCall(&agentRequest{Op: "add", KeyID: kf.id(), KeyPath: kf.path, Identity: identity.String()})
-	return err
+	var secret [x25519Size]byte
+	defer wipe(secret[:])
+	if err := secretKeyBytes(identity, &secret); err != nil {
+		return err
+	}
+	return agentAdd(kf.id(), kf.path, &secret)
 }
 
 // decryptOne decrypts a single ciphertext with the own key.

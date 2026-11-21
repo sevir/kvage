@@ -6,7 +6,8 @@ Guide for coding agents working on kvage. Humans: see `README.md`.
 
 Go CLI (`package main` in `src/`) that stores key-value pairs in a YAML file
 with age-encrypted values. Dependencies: cobra, `filippo.io/age`, yaml.v3,
-`golang.org/x/term`, `golang.org/x/sys`. The repository uses **jj**
+`golang.org/x/term`, `golang.org/x/sys`, `filippo.io/edwards25519` (field
+arithmetic only). The repository uses **jj**
 (not colocated: there is no `.git` at the top level).
 
 ## Layout
@@ -27,6 +28,10 @@ src/
   agent_linux.go     hardening and peer checks on Linux
   agent_darwin.go    the same on macOS (uid check only)
   agent_other.go     stubs for platforms without an agent (windows)
+  keyslot.go         where the agent keeps an unlocked key: memory or TPM
+  tpm_linux.go       TPM 2.0 sealed session key (hand-encoded commands)
+  tpm_darwin.go      stub: no TPM
+  x25519.go          erasable X25519 age identity, bech32
   tty_unix.go, tty_windows.go   passphrase prompt on the terminal
   userconfig.go      <config>/config.yaml
   textutil.go        masking, shell quoting, secret input
@@ -43,6 +48,7 @@ build/               ignored; release artifacts
 ```bash
 go test ./src            # all tests
 go test -race ./src      # run before finishing agent or keyring changes
+sg tss -c 'go test ./src'   # also runs the tests that need the real TPM
 go vet ./src
 GOOS=windows go vet ./src && GOOS=darwin go vet ./src   # build tags compile
 go build -o /tmp/kvage ./src
@@ -114,6 +120,14 @@ These must keep working without migration:
 - The recipients list used for a store comes from that store's directory.
 - The agent never returns the identity. Clients send ciphertexts and receive
   plaintexts.
+- In the agent the private key only ever lives in buffers that kvage owns and
+  erases (`keySlot.use`, `secretIdentity`). Do not convert it to a string,
+  pass it through JSON, or hand it to a library that copies it: that is why
+  `x25519.go` and `tpm_linux.go` exist instead of `crypto/ecdh` and a TPM
+  library. Changes to `x25519.go` must keep `TestX25519RFC7748` and the
+  comparison tests against `crypto/ecdh` and `filippo.io/age` passing.
+- TPM tests skip themselves when `/dev/tpmrm0` cannot be opened. A change to
+  `tpm_linux.go` is not verified until they have run on a machine with a TPM.
 - Be accurate in the README about what is protected. The session agent does
   not defend against root, nor against other programs of the same user
   running kvage.

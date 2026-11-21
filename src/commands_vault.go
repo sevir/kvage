@@ -267,13 +267,17 @@ func (a *app) statusCmd() *cobra.Command {
 				fmt.Fprintf(w, "Session:     agent unreachable: %v\n", err)
 				return nil
 			}
-			state := "locked"
+			state, where := "locked", ""
 			for _, k := range resp.Keys {
 				if k.KeyID == kf.id() {
 					state = "unlocked since " + k.Since.Local().Format(time.DateTime)
+					where = k.Protection
 				}
 			}
 			fmt.Fprintf(w, "Session:     %s\n", state)
+			if where != "" {
+				fmt.Fprintf(w, "Key held:    %s\n", where)
+			}
 			timeout := "none (until `kvage lock`, logout or reboot)"
 			if resp.Timeout != "" {
 				timeout = resp.Timeout + " without use"
@@ -308,14 +312,16 @@ func missingNote(path string) string {
 // user.
 func (a *app) agentCmd() *cobra.Command {
 	var timeout time.Duration
+	var tpmMode string
 	cmd := &cobra.Command{
 		Use:    "agent",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAgent(timeout, a.out)
+			return runAgent(timeout, tpmMode, a.out)
 		},
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "lock after this long without use")
+	cmd.Flags().StringVar(&tpmMode, "tpm", tpmModeAuto, "auto, off or require")
 	return cmd
 }

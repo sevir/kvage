@@ -269,6 +269,7 @@ inactivity timeout if you set one:
 session:
   mode: session     # or "always": ask every time, no agent
   timeout: 30m      # lock after 30 minutes without use (default: none)
+  tpm: auto         # auto | off | require (Linux, see below)
 ```
 
 With the key locked, the `.kvagerc` hook does not ask for the passphrase on
@@ -278,6 +279,33 @@ unlock and load.
 Sessions exist on Linux and macOS. On Windows the passphrase is asked for on
 every command.
 
+### TPM-guarded sessions (Linux)
+
+On a Linux machine with a TPM 2.0, the agent does not keep the unlocked key
+at all. On unlock it hands the key to the TPM, which holds it sealed for the
+session, and keeps only a random authorization value. For each command the
+key is unsealed, used for a few milliseconds and erased again.
+
+- A memory image of the machine (hibernation file, swap, crash dump) taken
+  while the session is open does not contain the key, and what it does
+  contain is useless on any other machine or after a reboot.
+- The session ends on reboot **and on hibernation**: the TPM forgets the
+  sealed key when it is reset. Suspend to RAM keeps it.
+- It costs one TPM operation per command, not per value: about 60 ms on the
+  machine it was developed on, whether the command reads one value or all.
+- The key file on disk is not tied to the TPM. It remains a normal
+  passphrase-protected age key that you can copy and use elsewhere.
+
+Your user needs access to `/dev/tpmrm0`, usually by being in the `tss` group
+(`sudo usermod -aG tss "$USER"`, then log in again). `kvage status` shows
+where the unlocked key is held. With `tpm: auto` (the default) kvage falls
+back to keeping the key in the agent's memory when there is no usable TPM,
+and `status` says why; `tpm: require` refuses to open a session instead;
+`tpm: off` never uses the TPM.
+
+This is protection for memory at rest, not against a live attacker: see the
+limits below.
+
 ## Security: what is and is not protected
 
 kvage protects secrets **at rest**: a copy of the store, of a `.kvagerc` or
@@ -286,7 +314,8 @@ for the store, without the key).
 
 While a session is open, on Linux:
 
-- the key lives only in the agent's memory, not on disk in the clear;
+- the key is sealed in the TPM when there is one, otherwise it lives only in
+  the agent's memory; either way it is not on disk in the clear;
 - the agent cannot be ptraced or have its memory read by other programs of
   your user (`PR_SET_DUMPABLE=0`), produces no core dumps, and keeps its
   memory out of swap when `RLIMIT_MEMLOCK` allows it (`kvage status` tells);
@@ -302,10 +331,18 @@ Limits you should know:
 - **root is not kept out.** root can read the agent's memory and take the
   key, capture your passphrase as you type it, or read values as they are
   decrypted. Nothing in kvage defends against a compromised root or kernel.
-- **Locking is ending the process.** Go cannot reliably erase every copy of a
-  key from its own memory, so `lock` stops the agent. The memory of a
-  hibernated machine, a crash dump or a VM snapshot taken while a session was
-  open may contain the key.
+- **A TPM-guarded session changes none of the two points above.** Whoever
+  can read the agent's memory (root) can take the authorization value and ask
+  the TPM for the key, and any program of yours can still run `kvage get`.
+  The key and that value also travel unencrypted between kvage and the TPM
+  chip, so someone probing the TPM bus of a running, unlocked machine could
+  read them.
+- **Erasing memory is best effort.** Without a TPM-guarded session the key
+  stays in the agent's memory until `lock` ends the process, so the memory of
+  a hibernated machine, a crash dump or a VM snapshot taken while a session
+  was open may contain it. With one, kvage erases every buffer the key
+  passes through, but the Go runtime gives no hard guarantee that no copy
+  survives.
 - On macOS the agent checks only the user and applies no memory protection.
 - Secrets passed as command line arguments (`kvage set key value`) are
   visible in your shell history and, briefly, to other users in the process

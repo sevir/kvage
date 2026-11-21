@@ -30,6 +30,10 @@ type userConfig struct {
 		// Timeout locks the session after this long without use, e.g.
 		// "30m". Empty or "0" means no timeout.
 		Timeout string `yaml:"timeout"`
+		// TPM is "auto" (default: on Linux, keep the unlocked key sealed in
+		// the TPM when one is usable, otherwise in the agent's memory),
+		// "off" (always in memory) or "require" (fail without a TPM).
+		TPM string `yaml:"tpm"`
 	} `yaml:"session"`
 
 	Key struct {
@@ -42,7 +46,22 @@ type userConfig struct {
 const (
 	sessionModeSession = "session"
 	sessionModeAlways  = "always"
+
+	tpmModeAuto    = "auto"
+	tpmModeOff     = "off"
+	tpmModeRequire = "require"
 )
+
+// defaultTPMMode is the session.tpm value when the config does not set one.
+// A variable so tests do not depend on the machine's TPM.
+var defaultTPMMode = tpmModeAuto
+
+func (c *userConfig) tpmMode() string {
+	if c.Session.TPM == "" {
+		return defaultTPMMode
+	}
+	return c.Session.TPM
+}
 
 func (c *userConfig) sessionMode() string {
 	if c.Session.Mode == "" {
@@ -67,6 +86,11 @@ func (c *userConfig) validate() error {
 	case sessionModeSession, sessionModeAlways:
 	default:
 		return fmt.Errorf("invalid session.mode %q (use session or always)", c.Session.Mode)
+	}
+	switch c.tpmMode() {
+	case tpmModeAuto, tpmModeOff, tpmModeRequire:
+	default:
+		return fmt.Errorf("invalid session.tpm %q (use auto, off or require)", c.Session.TPM)
 	}
 	_, err := c.sessionTimeout()
 	return err

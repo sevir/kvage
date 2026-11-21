@@ -20,7 +20,8 @@ import (
 )
 
 func init() {
-	scryptWorkFactor = 8 // keep the tests fast
+	scryptWorkFactor = 8        // keep the tests fast
+	defaultTPMMode = tpmModeOff // TPM tests ask for it explicitly
 }
 
 const testAgentEnv = "KVAGE_TEST_RUN_AGENT"
@@ -29,7 +30,7 @@ const testAgentEnv = "KVAGE_TEST_RUN_AGENT"
 // process: started with testAgentEnv set, it runs the agent and exits.
 func TestMain(m *testing.M) {
 	if os.Getenv(testAgentEnv) != "" {
-		if err := runAgent(0, os.Stdout); err != nil {
+		if err := runAgent(0, os.Getenv(testAgentEnv), os.Stdout); err != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -49,9 +50,9 @@ func useRealAgent(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 	t.Setenv(testAgentEnv, "1")
 	old := agentCommand
-	agentCommand = func(self string, timeout time.Duration) *exec.Cmd {
+	agentCommand = func(self string, timeout time.Duration, tpmMode string) *exec.Cmd {
 		cmd := exec.Command(self, "-test.run=^$")
-		cmd.Env = []string{testAgentEnv + "=1"}
+		cmd.Env = []string{testAgentEnv + "=" + tpmMode}
 		return cmd
 	}
 	t.Cleanup(func() {
@@ -185,12 +186,12 @@ func useAgent(t *testing.T) {
 	agentTick = 20 * time.Millisecond
 	var servers []*agentServer
 	var done []chan struct{}
-	spawnAgent = func(timeout time.Duration) error {
+	spawnAgent = func(timeout time.Duration, tpmMode string) error {
 		l, sock, err := listenAgent()
 		if err != nil || l == nil {
 			return err
 		}
-		s := newAgentServer(timeout, []string{"in-process test agent"})
+		s := newAgentServer(timeout, tpmMode, []string{"in-process test agent"})
 		ch := make(chan struct{})
 		servers, done = append(servers, s), append(done, ch)
 		go func() {
@@ -609,5 +610,50 @@ func TestRuntimeDirectoryMustBePrivate(t *testing.T) {
 	}
 	if _, err := agentRuntimeDir(); err == nil {
 		t.Error("a world-readable runtime directory was accepted")
+	}
+}
+
+func TestSessionTPMRequireFailsWithoutTPM(t *testing.T) {
+	if f, err := os.OpenFile("/dev/tpmrm0", os.O_RDWR, 0); err == nil {
+		f.Close()
+		t.Skip("this machine has a usable TPM")
+	}
+	e := newEnv(t)
+	useAgent(t)
+	e.mustRun("v", "set", "k")
+	e.protect("pw")
+	writeFile(t, userConfigPath(), "session:\n  tpm: require\n")
+	usePrompts(t, "pw")
+	if _, _, err := e.run("", "unlock"); err == nil || !strings.Contains(err.Error(), "require") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// Without a usable TPM, "auto" keeps the key in memory and says so.
+func TestSessionTPMAutoFallsBack(t *testing.T) {
+	if f, err := os.OpenFile("/dev/tpmrm0", os.O_RDWR, 0); err == nil {
+		f.Close()
+		t.Skip("this machine has a usable TPM")
+	}
+	e := newEnv(t)
+	useAgent(t)
+	e.mustRun("v", "set", "k")
+	e.protect("pw")
+	writeFile(t, userConfigPath(), "session:\n  tpm: auto\n")
+	usePrompts(t, "pw")
+	if out, _ := e.mustRun("", "get", "k"); out != "v\n" {
+		t.Fatalf("get = %q", out)
+	}
+	if out, _ := e.mustRun("", "status"); !strings.Contains(out, "TPM not used") {
+		t.Errorf("status:\n%s", out)
+	}
+}
+
+func TestInvalidTPMMode(t *testing.T) {
+	e := newEnv(t)
+	e.mustRun("v", "set", "k")
+	writeFile(t, userConfigPath(), "session:\n  tpm: maybe\n")
+	if _, _, err := e.run("", "get", "k"); err == nil {
+		t.Error("invalid session.tpm accepted")
 	}
 }

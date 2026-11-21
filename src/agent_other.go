@@ -21,15 +21,15 @@ type agentRequest struct {
 	Op          string
 	KeyID       string
 	KeyPath     string
-	Identity    string
 	Ciphertexts [][]byte
 }
 
 type agentKeyInfo struct {
-	KeyID     string
-	Path      string
-	Recipient string
-	Since     time.Time
+	KeyID      string
+	Path       string
+	Recipient  string
+	Since      time.Time
+	Protection string
 }
 
 type agentResponse struct {
@@ -46,7 +46,8 @@ type agentResponse struct {
 	Version    string
 }
 
-func agentCall(*agentRequest) (*agentResponse, error) { return nil, errAgentDown }
-func ensureAgent(time.Duration) error                 { return errNoAgent }
-func stopAgentByPID() error                           { return errAgentDown }
-func runAgent(time.Duration, io.Writer) error         { return errNoAgent }
+func agentCall(*agentRequest) (*agentResponse, error)  { return nil, errAgentDown }
+func agentAdd(string, string, *[x25519Size]byte) error { return errNoAgent }
+func ensureAgent(time.Duration, string) error          { return errNoAgent }
+func stopAgentByPID() error                            { return errAgentDown }
+func runAgent(time.Duration, string, io.Writer) error  { return errNoAgent }

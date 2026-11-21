@@ -17,8 +17,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"filippo.io/age"
 )
 
 // The session agent is a background kvage process that keeps unlocked
@@ -51,7 +49,6 @@ type agentRequest struct {
 	Op          string   `json:"op"`
 	KeyID       string   `json:"key_id,omitempty"`
 	KeyPath     string   `json:"key_path,omitempty"`
-	Identity    string   `json:"identity,omitempty"`
 	Ciphertexts [][]byte `json:"ciphertexts,omitempty"`
 }
 
@@ -60,6 +57,8 @@ type agentKeyInfo struct {
 	Path      string    `json:"path"`
 	Recipient string    `json:"recipient"`
 	Since     time.Time `json:"since"`
+	// Protection says where the agent keeps this key.
+	Protection string `json:"protection"`
 }
 
 type agentResponse struct {
@@ -110,8 +109,27 @@ func agentSocketPath() (string, error) {
 
 // ---- client ----
 
+// Every request starts with one byte: frameJSON when a JSON request
+// follows, frameKey when the 32 raw bytes of a private key come first (the
+// "add" request). The key travels outside the JSON so that the agent can
+// read it straight into a buffer it is able to erase.
+const (
+	frameJSON = 'J'
+	frameKey  = 'K'
+)
+
 // agentCall sends one request to the running agent.
 func agentCall(req *agentRequest) (*agentResponse, error) {
+	return agentCallKey(req, nil)
+}
+
+// agentAdd hands a private key to the agent.
+func agentAdd(keyID, keyPath string, secret *[x25519Size]byte) error {
+	_, err := agentCallKey(&agentRequest{Op: "add", KeyID: keyID, KeyPath: keyPath}, secret)
+	return err
+}
+
+func agentCallKey(req *agentRequest, secret *[x25519Size]byte) (*agentResponse, error) {
 	sock, err := agentSocketPath()
 	if err != nil {
 		return nil, err
@@ -128,8 +146,20 @@ func agentCall(req *agentRequest) (*agentResponse, error) {
 		return nil, fmt.Errorf("refusing to talk to the process on %s: %w", sock, err)
 	}
 	conn.SetDeadline(time.Now().Add(2 * time.Minute))
-	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		return nil, fmt.Errorf("talking to the session agent: %w", err)
+	var werr error
+	if secret != nil {
+		_, werr = conn.Write([]byte{frameKey})
+		if werr == nil {
+			_, werr = conn.Write(secret[:])
+		}
+	} else {
+		_, werr = conn.Write([]byte{frameJSON})
+	}
+	if werr == nil {
+		werr = json.NewEncoder(conn).Encode(req)
+	}
+	if werr != nil {
+		return nil, fmt.Errorf("talking to the session agent: %w", werr)
 	}
 	conn.CloseWrite()
 	var resp agentResponse
@@ -144,13 +174,13 @@ func agentCall(req *agentRequest) (*agentResponse, error) {
 
 // agentCommand builds the command line of the agent process. A variable so
 // tests can re-execute the test binary instead.
-var agentCommand = func(self string, timeout time.Duration) *exec.Cmd {
-	return exec.Command(self, "agent", "--timeout", timeout.String())
+var agentCommand = func(self string, timeout time.Duration, tpmMode string) *exec.Cmd {
+	return exec.Command(self, "agent", "--timeout", timeout.String(), "--tpm", tpmMode)
 }
 
 // spawnAgent starts the background agent. A variable so tests can run the
 // agent in-process.
-var spawnAgent = func(timeout time.Duration) error {
+var spawnAgent = func(timeout time.Duration, tpmMode string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -161,7 +191,7 @@ var spawnAgent = func(timeout time.Duration) error {
 	}
 	defer ready.Close()
 
-	cmd := agentCommand(self, timeout)
+	cmd := agentCommand(self, timeout, tpmMode)
 	cmd.Dir = "/"
 	cmd.Stdout = w
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -200,13 +230,13 @@ var spawnAgent = func(timeout time.Duration) error {
 }
 
 // ensureAgent makes sure an agent is running.
-func ensureAgent(timeout time.Duration) error {
+func ensureAgent(timeout time.Duration, tpmMode string) error {
 	if _, err := agentCall(&agentRequest{Op: "status"}); err == nil {
 		return nil
 	} else if !errors.Is(err, errAgentDown) {
 		return err
 	}
-	if err := spawnAgent(timeout); err != nil {
+	if err := spawnAgent(timeout, tpmMode); err != nil {
 		return err
 	}
 	_, err := agentCall(&agentRequest{Op: "status"})
@@ -238,8 +268,9 @@ func stopAgentByPID() error {
 // ---- server ----
 
 type agentKey struct {
-	identity *age.X25519Identity
-	info     agentKeyInfo
+	slot   keySlot
+	public [x25519Size]byte
+	info   agentKeyInfo
 }
 
 type agentServer struct {
@@ -249,12 +280,13 @@ type agentServer struct {
 	lastUse   time.Time
 	emptyAt   time.Time
 	timeout   time.Duration
+	tpmMode   string
 	hardening []string
 	stop      chan struct{}
 	stopOnce  sync.Once
 }
 
-func newAgentServer(timeout time.Duration, hardening []string) *agentServer {
+func newAgentServer(timeout time.Duration, tpmMode string, hardening []string) *agentServer {
 	now := time.Now()
 	return &agentServer{
 		keys:      make(map[string]*agentKey),
@@ -262,6 +294,7 @@ func newAgentServer(timeout time.Duration, hardening []string) *agentServer {
 		lastUse:   now,
 		emptyAt:   now,
 		timeout:   timeout,
+		tpmMode:   tpmMode,
 		hardening: hardening,
 		stop:      make(chan struct{}),
 	}
@@ -271,7 +304,17 @@ func (s *agentServer) shutdown() {
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 
-func (s *agentServer) handle(req *agentRequest) *agentResponse {
+// dropAll erases every key. The caller holds s.mu.
+func (s *agentServer) dropAll() {
+	for id, k := range s.keys {
+		k.slot.close()
+		delete(s.keys, id)
+	}
+}
+
+// handle serves one request. secret is the key that came with an "add"
+// request, nil otherwise; it is erased by the caller.
+func (s *agentServer) handle(req *agentRequest, secret *[x25519Size]byte) *agentResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Looking at the session is not using it: "status" must not keep an
@@ -297,20 +340,29 @@ func (s *agentServer) handle(req *agentRequest) *agentResponse {
 		return resp
 
 	case "add":
-		identity, err := age.ParseX25519Identity(strings.TrimSpace(req.Identity))
-		if err != nil || req.KeyID == "" {
+		if secret == nil || req.KeyID == "" {
 			return &agentResponse{Error: "invalid identity"}
 		}
+		slot, err := newKeySlot(secret, s.tpmMode)
+		if err != nil {
+			return &agentResponse{Error: err.Error()}
+		}
+		if old, ok := s.keys[req.KeyID]; ok {
+			old.slot.close()
+		}
+		public := publicFromSecret(secret)
 		s.keys[req.KeyID] = &agentKey{
-			identity: identity,
+			slot:   slot,
+			public: public,
 			info: agentKeyInfo{
-				KeyID:     req.KeyID,
-				Path:      req.KeyPath,
-				Recipient: identity.Recipient().String(),
-				Since:     time.Now(),
+				KeyID:      req.KeyID,
+				Path:       req.KeyPath,
+				Recipient:  recipientKeyString(public),
+				Since:      time.Now(),
+				Protection: slot.describe(),
 			},
 		}
-		return &agentResponse{Recipient: identity.Recipient().String()}
+		return &agentResponse{Recipient: recipientKeyString(public)}
 
 	case "recipient":
 		k, ok := s.keys[req.KeyID]
@@ -328,20 +380,32 @@ func (s *agentServer) handle(req *agentRequest) *agentResponse {
 			Plaintexts: make([][]byte, len(req.Ciphertexts)),
 			Errors:     make([]string, len(req.Ciphertexts)),
 		}
-		for i, c := range req.Ciphertexts {
-			plain, err := decryptValue(string(c), k.identity)
-			if err != nil {
-				resp.Errors[i] = err.Error()
-				continue
+		err := k.slot.use(func(secret *[x25519Size]byte) error {
+			identity := newSecretIdentity(secret, k.public)
+			for i, c := range req.Ciphertexts {
+				plain, err := decryptValue(string(c), identity)
+				if err != nil {
+					resp.Errors[i] = err.Error()
+					continue
+				}
+				resp.Plaintexts[i] = []byte(plain)
 			}
-			resp.Plaintexts[i] = []byte(plain)
+			return nil
+		})
+		if err != nil {
+			// The key could not be produced (for instance the TPM object
+			// did not survive a hibernation): the session is over.
+			k.slot.close()
+			delete(s.keys, req.KeyID)
+			return &agentResponse{Error: fmt.Sprintf("the session was lost (%v): run `kvage unlock`", err)}
 		}
 		return resp
 
 	case "lock":
 		if req.KeyID == "" {
-			clear(s.keys)
-		} else {
+			s.dropAll()
+		} else if k, ok := s.keys[req.KeyID]; ok {
+			k.slot.close()
 			delete(s.keys, req.KeyID)
 		}
 		if len(s.keys) == 0 {
@@ -362,12 +426,29 @@ func (s *agentServer) serveConn(conn *net.UnixConn) {
 		enc.Encode(&agentResponse{Error: "request refused: " + err.Error()})
 		return
 	}
+	var frame [1]byte
+	if _, err := io.ReadFull(conn, frame[:]); err != nil {
+		return
+	}
+	var secret *[x25519Size]byte
+	switch frame[0] {
+	case frameJSON:
+	case frameKey:
+		secret = new([x25519Size]byte)
+		defer wipe(secret[:])
+		if _, err := io.ReadFull(conn, secret[:]); err != nil {
+			return
+		}
+	default:
+		enc.Encode(&agentResponse{Error: "malformed request"})
+		return
+	}
 	var req agentRequest
 	if err := json.NewDecoder(io.LimitReader(conn, agentMaxRequest)).Decode(&req); err != nil {
 		enc.Encode(&agentResponse{Error: "malformed request"})
 		return
 	}
-	enc.Encode(s.handle(&req))
+	enc.Encode(s.handle(&req, secret))
 }
 
 // expired reports whether the agent should stop: nothing to hold, idle for
@@ -421,7 +502,7 @@ loop:
 	l.SetUnlinkOnClose(false)
 	l.Close()
 	s.mu.Lock()
-	clear(s.keys)
+	s.dropAll()
 	s.mu.Unlock()
 	if current, err := os.Lstat(sock); err == nil && own != nil && os.SameFile(own, current) {
 		os.Remove(sock)
@@ -451,7 +532,7 @@ func listenAgent() (*net.UnixListener, string, error) {
 }
 
 // runAgent is the body of the hidden "kvage agent" command.
-func runAgent(timeout time.Duration, ready io.Writer) error {
+func runAgent(timeout time.Duration, tpmMode string, ready io.Writer) error {
 	hardening := hardenProcess()
 	l, sock, err := listenAgent()
 	if err != nil {
@@ -465,7 +546,7 @@ func runAgent(timeout time.Duration, ready io.Writer) error {
 	os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 	defer os.Remove(pidFile)
 
-	s := newAgentServer(timeout, hardening)
+	s := newAgentServer(timeout, tpmMode, hardening)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	signal.Ignore(syscall.SIGHUP)
